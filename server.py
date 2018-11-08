@@ -58,16 +58,12 @@ from livereload.handlers import ForceReloadHandler, StaticFileHandler
 from livereload.server import LiveScriptInjector
 
 def server_application(self, port, host, liveport=None, debug=None, live_css=True):
+    override_endpoint_client = True
+
     LiveReloadHandler.watcher = self.watcher
     LiveReloadHandler.live_css = live_css
-
-    override_port = os.environ.get('OVERRIDE_PORT')
-
     if liveport is None:
         liveport = port
-
-    js_port = override_port or liveport or port
-
     if debug is None and self.app:
         debug = True
 
@@ -80,17 +76,27 @@ def server_application(self, port, host, liveport=None, debug=None, live_css=Tru
     # The livereload.js snippet.
     # Uses JavaScript to dynamically inject the client's hostname.
     # This allows for serving on 0.0.0.0.
-    live_reload_path = ":{port}/livereload.js?port={port}".format(port=js_port)
-    if js_port == 80 or js_port == 443:
-        live_reload_path = "/livereload.js?port={port}".format(port=js_port)
+
+    live_reload_path = ":{port}/livereload.js?port={port}".format(port=liveport)
+    if liveport == 80 or liveport == 443:
+        live_reload_path = "/livereload.js?port={port}".format(port=liveport)
+
+    src_script = ' + window.location.hostname + "{path}">'.format(path=live_reload_path)
+
+    if override_endpoint_client:
+        src_script = (
+            ' + window.location.host + "/livereload.js?port="'
+            ' + window.location.port + "'
+            '>'
+        )
 
     live_script = escape.utf8((
         '<script type="text/javascript">'
         'document.write("<script src=''//"'
-        ' + window.location.hostname + "{path}''>'
+        '{src_script}'
         ' </"+"script>");'
         '</script>'
-    ).format(path=live_reload_path))
+    ).format(src_script=src_script))
 
     web_handlers = self.get_web_handlers(live_script)
 
@@ -114,6 +120,7 @@ def server_application(self, port, host, liveport=None, debug=None, live_css=Tru
         app.listen(port, address=host)
         live = web.Application(handlers=live_handlers, debug=False)
         live.listen(liveport, address=host)
+
 
 if __name__ == '__main__':
 
