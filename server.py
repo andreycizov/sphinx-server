@@ -39,6 +39,7 @@ class AuthHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
             self.wfile.write('Credentials required.')
             pass
 
+
 '''
 This function is used to simulate the manipulation of the stack (like pushd and popd in BASH)
 and change the folder with the usage of the context manager
@@ -50,6 +51,76 @@ def pushd(new_dir):
     yield
     os.chdir(previous_dir)
 
+from tornado import web
+from tornado import escape
+from livereload.handlers import LiveReloadHandler, LiveReloadJSHandler
+from livereload.handlers import ForceReloadHandler, StaticFileHandler
+from livereload.server import LiveScriptInjector
+
+def server_application(self, port, host, liveport=None, debug=None, live_css=True):
+    override_endpoint_client = True
+
+    LiveReloadHandler.watcher = self.watcher
+    LiveReloadHandler.live_css = live_css
+    if liveport is None:
+        liveport = port
+    if debug is None and self.app:
+        debug = True
+
+    live_handlers = [
+        (r'/livereload', LiveReloadHandler),
+        (r'/forcereload', ForceReloadHandler),
+        (r'/livereload.js', LiveReloadJSHandler)
+    ]
+
+    # The livereload.js snippet.
+    # Uses JavaScript to dynamically inject the client's hostname.
+    # This allows for serving on 0.0.0.0.
+
+    live_reload_path = ":{port}/livereload.js?port={port}".format(port=liveport)
+    if liveport == 80 or liveport == 443:
+        live_reload_path = "/livereload.js?port={port}".format(port=liveport)
+
+    src_script = ' + window.location.hostname + "{path}">'.format(path=live_reload_path)
+
+    if override_endpoint_client:
+        src_script = (
+            ' + window.location.host + "/livereload.js?port="'
+            ' + window.location.port + "'
+            '>'
+        )
+
+    live_script = escape.utf8((
+        '<script type="text/javascript">'
+        'document.write("<script src=''//"'
+        '{src_script}'
+        ' </"+"script>");'
+        '</script>'
+    ).format(src_script=src_script))
+
+    web_handlers = self.get_web_handlers(live_script)
+
+    class ConfiguredTransform(LiveScriptInjector):
+        script = live_script
+
+    if liveport == port:
+        handlers = live_handlers + web_handlers
+        app = web.Application(
+            handlers=handlers,
+            debug=debug,
+            transforms=[ConfiguredTransform]
+        )
+        app.listen(port, address=host)
+    else:
+        app = web.Application(
+            handlers=web_handlers,
+            debug=debug,
+            transforms=[ConfiguredTransform]
+        )
+        app.listen(port, address=host)
+        live = web.Application(handlers=live_handlers, debug=False)
+        live.listen(liveport, address=host)
+
 
 if __name__ == '__main__':
 
@@ -59,7 +130,6 @@ if __name__ == '__main__':
     build_folder = os.path.realpath('_build/html')
     source_folder = os.path.realpath('.')
     configuration = None
-
     with open(install_folder + config_file, 'r') as config_stream:
         configuration = yaml.load(config_stream)
 
@@ -88,6 +158,7 @@ if __name__ == '__main__':
 
         builder.build()
 
+        server.application = server_application.__get__(server, Server)
         server.serve(port=8000, host='0.0.0.0', root=build_folder)
     else:
         # Building once when server starts
