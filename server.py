@@ -87,8 +87,11 @@ if __name__ == '__main__':
         server.watch(build_folder)
 
         builder.build()
+        
+        liveport = os.environ.get('LIVEPORT')
+        liveport = int(liveport) if liveport else None
 
-        server.serve(port=8000, host='0.0.0.0', liveport=os.environ.get('LIVEPORT'), root=build_folder)
+        server.serve(port=8000, host='0.0.0.0', liveport=liveport, root=build_folder)
     else:
         # Building once when server starts
         builder = sphinx_autobuild.SphinxBuilder(outdir=build_folder, args=['-b', 'html', source_folder, build_folder]+sys.argv[1:])
